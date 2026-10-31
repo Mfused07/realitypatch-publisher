@@ -1,0 +1,18 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Signing in</title><link rel="stylesheet" href="style.css"></head><body><main>
+<h1>RealityPatch Publisher</h1>
+<p id="msg">Finishing sign-in...</p>
+<script>
+(function(){
+  var q = new URLSearchParams(location.search);
+  var msg = document.getElementById('msg');
+  if (q.get('error')) { msg.textContent = 'TikTok sign-in was cancelled or failed: ' + q.get('error'); return; }
+  if (!q.get('code')) { msg.textContent = 'No sign-in code received.'; return; }
+  // hand the code to the publisher running on the owner's own computer
+  var local = 'http://127.0.0.1:8765/callback' + location.search;
+  msg.innerHTML = 'Sending the sign-in to the publisher on this computer... If nothing happens, make sure the publisher is running, then <a href="' + local.replace(/"/g,'') + '">click here</a>.';
+  setTimeout(function(){ location.replace(local); }, 400);
+})();
+</script>
+<footer><a href="index.html">Home</a> · <a href="privacy.html">Privacy Policy</a></footer>
+</main></body></html>
