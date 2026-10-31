@@ -135,7 +135,7 @@ async function send(mode) {
     disable_comment: !$('c_com').checked, disable_duet: !$('c_duet').checked, disable_stitch: !$('c_stitch').checked,
     brand_content_toggle: $('disc').checked && $('b_paid').checked, brand_organic_toggle: $('disc').checked && $('b_own').checked});
   $('draft').disabled = false;
-  if (!r.data || !r.data.publish_id) { $('res').className = 'err'; $('res').textContent = 'Not posted: ' + (r.error && (r.error.message || r.error.code) || r.error || 'unknown error'); validate(); return; }
+  if (!r.data || !r.data.publish_id) { $('res').className = 'err'; $('res').textContent = 'Not posted: ' + (r.error && r.error.code ? r.error.code.replace(/_/g, ' ') : (r.error || 'unknown error')); validate(); return; }
   $('res').className = 'ok';
   $('res').textContent = mode === 'draft' ? 'Sent to your TikTok inbox. Open TikTok to finish and post it.' :
     'Uploaded. TikTok is processing your video; it can take a few minutes to appear on your profile.';
