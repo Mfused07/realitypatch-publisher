@@ -1,0 +1,158 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RealityPatch Publisher</title><link rel="stylesheet" href="style.css">
+<style>
+.card{background:#16161a;border:1px solid #2a2a30;border-radius:12px;padding:16px;margin:16px 0}
+button{background:#fe2c55;color:#fff;border:0;border-radius:8px;padding:10px 18px;font:inherit;cursor:pointer}
+button.ghost{background:#2a2a30}button:disabled{opacity:.45;cursor:not-allowed}
+select,textarea{width:100%;box-sizing:border-box;background:#0b0b0d;color:#eee;border:1px solid #333;border-radius:8px;padding:8px;font:inherit}
+textarea{min-height:90px}label{display:block;margin:10px 0 4px;font-weight:600}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.muted{color:#999;font-size:14px}.err{color:#ff6b6b}.ok{color:#5ee08a}
+.chk{display:flex;gap:8px;align-items:center;font-weight:400;margin:6px 0}.chk input{width:auto}
+video{width:100%;max-width:300px;border-radius:10px;background:#000}
+.list button{display:block;width:100%;text-align:left;margin:6px 0;background:#202026}
+.list button.sel{outline:2px solid #fe2c55}.avatar{width:44px;height:44px;border-radius:50%}
+</style></head><body><main>
+<h1>RealityPatch Publisher</h1>
+<p class="muted">Posts the Reality Patch channel's own videos to its own TikTok account. Requires the publisher helper running on this computer.</p>
+
+<div id="out" class="card"><p>Connecting to the publisher on this computer...</p></div>
+
+<div id="acct" class="card" hidden>
+  <div class="row"><img id="av" class="avatar" alt=""><div><div id="nick" style="font-weight:700"></div><div class="muted">Signed in with TikTok</div></div>
+  <span style="flex:1"></span><button class="ghost" id="logout">Sign out</button></div>
+  <p id="limit" class="err"></p>
+</div>
+
+<div id="pick" class="card" hidden><h2>1. Choose a video</h2><div id="list" class="list"></div></div>
+
+<div id="form" class="card" hidden>
+  <h2>2. Post to TikTok</h2>
+  <video id="pv" controls playsinline></video>
+  <p id="dur" class="muted"></p>
+  <label for="cap">Caption</label><textarea id="cap" maxlength="2200"></textarea>
+  <label for="priv">Who can view this video</label>
+  <select id="priv"><option value="" selected disabled>Select privacy</option></select>
+  <label>Allow users to</label>
+  <div class="row">
+    <span class="chk"><input type="checkbox" id="c_com"><label for="c_com" style="margin:0;font-weight:400">Comment</label></span>
+    <span class="chk"><input type="checkbox" id="c_duet"><label for="c_duet" style="margin:0;font-weight:400">Duet</label></span>
+    <span class="chk"><input type="checkbox" id="c_stitch"><label for="c_stitch" style="margin:0;font-weight:400">Stitch</label></span>
+  </div>
+  <label>Disclose video content</label>
+  <span class="chk"><input type="checkbox" id="disc"><span>This video promotes a brand, product or service</span></span>
+  <div id="discbox" hidden style="margin-left:24px">
+    <span class="chk"><input type="checkbox" id="b_own"><span>Your brand <span class="muted">(you are promoting yourself or your own business)</span></span></span>
+    <span class="chk"><input type="checkbox" id="b_paid"><span>Branded content <span class="muted">(you are promoting another brand or a third party)</span></span></span>
+    <p id="disclabel" class="muted"></p>
+  </div>
+  <p id="consent" class="muted">By posting, you agree to TikTok's <a href="https://www.tiktok.com/legal/page/global/music-usage-confirmation/en" target="_blank" rel="noopener">Music Usage Confirmation</a>.</p>
+  <div class="row"><button id="post" disabled>Post to TikTok</button><button class="ghost" id="draft">Send to TikTok inbox as draft</button></div>
+  <p id="res"></p>
+</div>
+
+<footer><a href="index.html">Home</a> · <a href="terms.html">Terms of Service</a> · <a href="privacy.html">Privacy Policy</a></footer>
+</main>
+<script>
+const H = 'http://127.0.0.1:8765';
+const $ = id => document.getElementById(id);
+let S = null, cur = null, maxDur = 0;
+
+async function api(path, body) {
+  const r = await fetch(H + path, body ? {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)} : {});
+  return r.json();
+}
+function show(id, on) { $(id).hidden = !on; }
+function msg(html, cls) { $('out').innerHTML = '<p class="' + (cls || '') + '">' + html + '</p>'; show('out', true); }
+
+async function start() {
+  const q = new URLSearchParams(location.search);
+  if (q.get('error')) msg('Sign-in failed: ' + q.get('error'), 'err');
+  try { S = await api('/api/session'); }
+  catch (e) { msg('The publisher helper is not running on this computer. Start it with <code>tiktok_publish.py serve</code>, then reload.', 'err'); return; }
+  if (!S.signed_in) {
+    $('out').innerHTML = '<p>Sign in with TikTok to post.</p><button id="login">Continue with TikTok</button>';
+    $('login').onclick = async () => { const r = await api('/api/login'); location.href = r.url; };
+    return;
+  }
+  show('out', false); show('acct', true);
+  const c = S.creator || {}, u = S.user || {};
+  $('nick').textContent = c.creator_nickname || u.display_name || '';
+  $('av').src = c.creator_avatar_url || u.avatar_url || '';
+  $('limit').textContent = S.refuse ? 'Posting is not available right now: ' + S.refuse : '';
+  maxDur = c.max_video_post_duration_sec || 0;
+  (c.privacy_level_options || []).forEach(p => {
+    const o = document.createElement('option'); o.value = p;
+    o.textContent = {PUBLIC_TO_EVERYONE: 'Everyone', MUTUAL_FOLLOW_FRIENDS: 'Friends', FOLLOWER_OF_CREATOR: 'Followers', SELF_ONLY: 'Only me'}[p] || p;
+    $('priv').appendChild(o);
+  });
+  [['c_com', c.comment_disabled], ['c_duet', c.duet_disabled], ['c_stitch', c.stitch_disabled]].forEach(([id, off]) => {
+    $(id).disabled = !!off; if (off) $(id).parentElement.title = 'Turned off in your TikTok settings';
+  });
+  const v = await api('/api/videos');
+  show('pick', true);
+  $('list').innerHTML = '';
+  (v.items || []).forEach(it => {
+    const b = document.createElement('button');
+    b.textContent = it.title + (it.status === 'posted' ? '  (posted)' : '');
+    b.disabled = it.status === 'posted';
+    b.onclick = () => choose(it, b);
+    $('list').appendChild(b);
+  });
+  if (!(v.items || []).length) $('list').innerHTML = '<p class="muted">No videos queued.</p>';
+}
+
+function choose(it, btn) {
+  cur = it;
+  document.querySelectorAll('#list button').forEach(b => b.classList.remove('sel')); btn.classList.add('sel');
+  $('pv').src = H + '/api/video?id=' + encodeURIComponent(it.id);
+  $('cap').value = it.caption; $('res').textContent = '';
+  show('form', true); validate();
+}
+$('pv').onloadedmetadata = () => {
+  const d = Math.round($('pv').duration);
+  $('dur').textContent = 'Length ' + d + ' s' + (maxDur ? ' (your account allows up to ' + maxDur + ' s)' : '');
+  validate();
+};
+
+function validate() {
+  const disc = $('disc').checked, own = $('b_own').checked, paid = $('b_paid').checked;
+  show('discbox', disc);
+  const self = [...$('priv').options].find(o => o.value === 'SELF_ONLY');
+  if (self) { self.disabled = disc && paid; if (self.disabled && $('priv').value === 'SELF_ONLY') $('priv').value = ''; }
+  $('disclabel').textContent = !disc ? '' : paid ? "Your video will be labeled as 'Paid partnership'." : own ? "Your video will be labeled as 'Promotional content'." : 'Choose at least one option.';
+  $('consent').innerHTML = 'By posting, you agree to TikTok\'s ' + (disc && paid ? '<a href="https://www.tiktok.com/legal/page/global/bc-policy/en" target="_blank" rel="noopener">Branded Content Policy</a> and ' : '') +
+    '<a href="https://www.tiktok.com/legal/page/global/music-usage-confirmation/en" target="_blank" rel="noopener">Music Usage Confirmation</a>.';
+  const tooLong = maxDur && $('pv').duration && $('pv').duration > maxDur;
+  $('post').disabled = !cur || !$('priv').value || (disc && !own && !paid) || !!S.refuse || tooLong;
+}
+['priv', 'disc', 'b_own', 'b_paid'].forEach(id => $(id).onchange = validate);
+
+async function send(mode) {
+  $('post').disabled = $('draft').disabled = true;
+  $('res').className = 'muted'; $('res').textContent = 'Uploading to TikTok...';
+  const r = await api('/api/post', {
+    id: cur.id, mode, caption: $('cap').value, privacy_level: $('priv').value,
+    disable_comment: !$('c_com').checked, disable_duet: !$('c_duet').checked, disable_stitch: !$('c_stitch').checked,
+    brand_content_toggle: $('disc').checked && $('b_paid').checked, brand_organic_toggle: $('disc').checked && $('b_own').checked});
+  $('draft').disabled = false;
+  if (!r.data || !r.data.publish_id) { $('res').className = 'err'; $('res').textContent = 'Not posted: ' + (r.error && (r.error.message || r.error.code) || r.error || 'unknown error'); validate(); return; }
+  $('res').className = 'ok';
+  $('res').textContent = mode === 'draft' ? 'Sent to your TikTok inbox. Open TikTok to finish and post it.' :
+    'Uploaded. TikTok is processing your video; it can take a few minutes to appear on your profile.';
+  poll(r.data.publish_id);
+}
+async function poll(pid) {
+  for (let i = 0; i < 20; i++) {
+    await new Promise(r => setTimeout(r, 6000));
+    const s = await api('/api/status?publish_id=' + encodeURIComponent(pid));
+    const st = s.data && s.data.status;
+    if (st) $('res').textContent += '';
+    if (st === 'PUBLISH_COMPLETE' || st === 'SEND_TO_USER_INBOX') { $('res').textContent = st === 'PUBLISH_COMPLETE' ? 'Posted to TikTok.' : 'In your TikTok inbox.'; return; }
+    if (st === 'FAILED') { $('res').className = 'err'; $('res').textContent = 'TikTok could not process the video: ' + (s.data.fail_reason || ''); return; }
+  }
+}
+$('post').onclick = () => send('direct');
+$('draft').onclick = () => cur && send('draft');
+$('logout').onclick = async () => { await api('/api/logout'); location.reload(); };
+start();
+</script></body></html>
